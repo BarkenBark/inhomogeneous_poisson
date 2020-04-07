@@ -6,6 +6,7 @@ import numpy as np
 from numpy import pi as pi, sqrt as sqrt, exp as exp
 from scipy.special import erf
 from pynverse import inversefunc
+import seaborn as sns
 
 
 # TO-DO:
@@ -115,7 +116,9 @@ def inhomogenous_poisson_thinning(intensity_fun, t_start, t_end, lambda_bar=None
             if t > t_end:
                 break
             U2 = np.random.rand()
-            if U2 <= intensity_fun(t) / lambda_bar:
+            acceptance_probability = intensity_fun(t) / lambda_bar
+            assert acceptance_probability <= 1, "Acceptance probability greater than 1, too low lambda_bar value has been provided."
+            if U2 <= acceptance_probability:
                 event_times_trial.append(t)
         event_times.append(np.array(event_times_trial))
 
@@ -191,7 +194,6 @@ def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_start, t_end, n_tria
     #TODO: Replace with more efficient function
     def get_infimum(f, y, x_interval):
         """Returns the infinimum of the set of values x which satisfy f(x)>y
-
             NOTE: Only consideres values on the defined interval x_interval
         """
         y_interval = f(x_interval)
@@ -220,7 +222,7 @@ def inhomogenous_poisson_exp(cumulative_intensity_fun, inverse_cumulative_intens
 
     Based on method outlined by Freakonometrics in https://freakonometrics.hypotheses.org/724
 
-    NOTE: If inverse_cumulative_intensity_fun is not available, you can approximate F_inv below using the Bisection Algorithm to solve for x in the equation x = f_inv(y)
+    NOTE: If inverse_cumulative_intensity_fun is not available, you can approximate inverse_cdf_arrival_time below using the Bisection Algorithm to solve for x in the equation x = f_inv(y) on the interval [t_start, t_end]
 
     Parameters
     ----------
@@ -241,6 +243,7 @@ def inhomogenous_poisson_exp(cumulative_intensity_fun, inverse_cumulative_intens
     assert t_end > t_start
     assert n_trials >= 1
 
+    # Aliases for readability
     Lambda = cumulative_intensity_fun
     Lambda_inv = inverse_cumulative_intensity_fun
 
@@ -278,6 +281,33 @@ def index_of_dispersion(event_times):
 # PLOTTING
 ##############################
 
+def plot_rug_dist(ax, event_times, unit="h"):
+    """Plots a kernel estimate over a rubplot for a single realization of a event process
+    
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Matplotlib axes object to plot into
+    event_times : np.ndarray, shape=[n_events]
+        Event times of a single process realization
+    unit : str
+    """
+    sns.distplot(event_times, rug=True, ax=ax)
+    ax.set_xlabel(f"Event time ({unit})")
+    ax.set_ylabel("Density")
+
+def plot_timelines(ax, event_times, unit="h"):
+    """Plots timelines for each of n_trials process realizations next to each other
+    
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Matplotlib axes object to plot into
+    event_times : list of np.ndarray, len=n_trials
+        event_times[i] contains an ndarray of event times for the i:th trial
+    unit : str
+    """
+    raise NotImplementedError
 
 
 # UTILITY
@@ -317,6 +347,19 @@ def get_event_counts_fun(event_times):
     return event_counts_fun
 
 def inverse_transform_sampling(inverse_cdf, n_samples=1):
+    """Perform inverse transform sampling to obtain samples of a random variable distributed with pdf f(x) by using the inverse of the cdf F_inv(y)
+    
+    Parameters
+    ----------
+    inverse_cdf : function
+        Inverse cumulative density function, taking a probability p and returning the value x of the random variable X such that P(X<=x)=p
+    n_samples : int
+    
+    Returns
+    -------
+    [type]
+        [description]
+    """
     u = np.random.rand(n_samples)
     return inverse_cdf(u)
 
@@ -326,7 +369,7 @@ def get_inverse_fun_bisection(f, a0, b0, bisection_iter=20):
     Parameters
     ----------
     f : function mapping float to float
-        Should be monotonically increasing
+        Should be monotonically increasing in order for the inverse to be valid
     a : float
         left bound for bisection method
     b : float
@@ -334,6 +377,10 @@ def get_inverse_fun_bisection(f, a0, b0, bisection_iter=20):
     bisection_iter : int, optional
         Number of bisection methood iterations to perform in a function call, by default 20
     """
+    resolution = 10000
+    vals = f(np.linspace(a0, b0, resolution))
+    assert all(np.diff(vals)>=0), "Provided function f is not monotonically increasing on the interval (a0, b0)"
+
     def inverse_fun(y):
         a = a0
         b = b0
