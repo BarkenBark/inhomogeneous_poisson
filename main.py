@@ -347,7 +347,7 @@ def get_event_counts_fun(event_times):
     return event_counts_fun
 
 def inverse_transform_sampling(inverse_cdf, n_samples=1):
-    """Perform inverse transform sampling to obtain samples of a random variable distributed with pdf f(x) by using the inverse of the cdf F_inv(y)
+    """Perform inverse transform sampling to obtain samples of a continious random variable distributed with pdf f(x) by using the inverse of the cdf F_inv(y)
     
     Parameters
     ----------
@@ -357,11 +357,25 @@ def inverse_transform_sampling(inverse_cdf, n_samples=1):
     
     Returns
     -------
-    [type]
-        [description]
+    x : np.ndarray, shape=[n_samples]
     """
     u = np.random.rand(n_samples)
     return inverse_cdf(u)
+
+def inverse_transform_sampling_discrete(pmf, n_samples):
+    """Perform inverse transform sampling to obtain samples of a discrete random variable distributed with pmf p(x)
+    
+    Parameters
+    ----------
+    pmf : function
+        Probability mass function
+    n_samples : int
+    
+    Returns
+    -------
+    x : np.ndarray, shape=[n_samples]
+    """
+    raise NotImplementedError
 
 def get_inverse_fun_bisection(f, a0, b0, bisection_iter=20):
     """Return a function handle to compute the inverse function of f
