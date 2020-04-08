@@ -5,13 +5,12 @@ import argparse
 import numpy as np
 from numpy import pi as pi, sqrt as sqrt, exp as exp
 from scipy.special import erf
-from pynverse import inversefunc
+#from pynverse import inversefunc
 import seaborn as sns
 
 
 # TO-DO:
 ######################
-# Assert that the inverse of 1-exp(f(x)-f(x+t)) is f_inv(f(t)-ln(1-y))-t. It's all good!
 
 
 # EXAMPLE PROCESSES
@@ -20,7 +19,50 @@ import seaborn as sns
 # For some simulation methods, it is useful to provide the cumulative internsity function Lamba(t) which is the primitive function to lambda(t)
 # For some simulation methods, it is useful to provide the inverse cumulative intensity function Lambda_inv(x) which is the inverse of the cumulative intensiy function
 
-class TrafficPoisson():
+class IHPP():
+
+    # Must be overridden
+    def intensity(self, t):
+        raise NotImplementedError
+
+    # May be overridden
+    def cumulative_intensity(self, t):
+        raise NotImplementedError
+
+    # May be overridden
+    def inverse_cumulative_intensity(self, i):
+        raise NotImplementedError
+
+class LinearRateIHPP(IHPP):
+
+    def __init__(self, a, b):
+        assert a != 0
+        self.a = a
+        self.b = b
+        assert approx_equals(self.inverse_cumulative_intensity(self.cumulative_intensity(5)), 5) 
+
+    def intensity(self, t):
+        """ Intensity function
+
+        Parameters
+        ----------
+        t : float in range [0,24)
+            Time of day in hours
+
+        Returns
+        ------------
+        lambda : float in R+
+            Instantaenous event rate in events/hour
+        """
+        return self.a*t + self.b
+
+    def cumulative_intensity(self, t):
+        return self.a/2*t**2 + self.b*t
+
+    def inverse_cumulative_intensity(self, i):
+        return (np.sqrt(2*self.a*i + self.b**2) - self.b) / self.a
+
+class TrafficIHPP():
     """Collection of functions defining an inhomogenous poisson process modeling traffic
     """
     
@@ -50,12 +92,12 @@ class TrafficPoisson():
         lambda : float in R+
             Instantaenous event rate in events/hour
         """
-        A, a, b1, b2, C = TrafficPoisson.get_params()
+        A, a, b1, b2, C = TrafficIHPP.get_params()
         return A*np.exp(-a*(t-b1)**2/2) + A*np.exp(-a*(t-b2)**2/2) + C
 
     @staticmethod
     def cumulative_intensity(t):
-        A, a, b1, b2, C = TrafficPoisson.get_params()
+        A, a, b1, b2, C = TrafficIHPP.get_params()
         return sqrt(pi/2/a) * A * ( erf(sqrt(a/2)*(t-b1)) + erf(sqrt(a/2)*(t-b2)) ) + C*t
 
     @staticmethod
@@ -199,6 +241,7 @@ def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_start, t_end, n_tria
         y_interval = f(x_interval)
         return min(x_interval[y_interval > y])
 
+    infimum_interval_res = 1000
     event_times = []
     for _ in range(n_trials):
         s = 0 # Could I make code more logical by initializing s such that t only takes on values greater than t_start?
@@ -206,7 +249,7 @@ def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_start, t_end, n_tria
         while True:
             u = np.random.rand()
             s = s - np.log(u)
-            t = get_infimum(cumulative_intensity_fun, s, np.arange(0, t_end-t_start)) # Can I make more efficient by starting at current t?
+            t = get_infimum(cumulative_intensity_fun, s, np.linspace(0, t_end-t_start, num=infimum_interval_res)) # Can I make more efficient by starting at current t?
             if t > t_end-t_start:
                 break
             event_times_trial.append(t)
@@ -257,6 +300,7 @@ def inhomogenous_poisson_exp(cumulative_intensity_fun, inverse_cumulative_intens
             if t > t_end:
                 break
             event_times_trial.append(t)
+        event_times.append(np.array(event_times_trial))
         
     if n_trials > 1:
         return event_times
@@ -307,8 +351,16 @@ def plot_timelines(ax, event_times, unit="h"):
         event_times[i] contains an ndarray of event times for the i:th trial
     unit : str
     """
-    raise NotImplementedError
-
+    n_timelines = len(event_times)
+    timeline_heights = np.linspace(0, 1, num=n_timelines+2)[1:-1]
+    for i in range(n_timelines):
+        ax.scatter(event_times[i], timeline_heights[i]*np.ones(len(event_times[i])), marker='|')
+    ax.set_ylim(0,1)
+    ax.set_yticks(timeline_heights, minor=False)
+    ax.set_yticklabels(np.arange(n_timelines)+1)
+    ax.yaxis.grid(True, which='major')
+    ax.set_ylabel('Timeline #')
+    ax.set_xlabel(f"Time ({unit})")
 
 # UTILITY
 #########################
@@ -395,22 +447,50 @@ def get_inverse_fun_bisection(f, a0, b0, bisection_iter=20):
     vals = f(np.linspace(a0, b0, resolution))
     assert all(np.diff(vals)>=0), "Provided function f is not monotonically increasing on the interval (a0, b0)"
 
-    def inverse_fun(y):
-        a = a0
-        b = b0
-        for _ in range(bisection_iter):
-            c = (a+b)/2
-            if f(c)<=y:
-                a = c
-            else:
-                b = c
-        return (a+b)/2
+    return lambda y: inverse_fun_bisection(f, y, a0, b0, bisection_iter=bisection_iter)
 
-    return inverse_fun
+def inverse_fun_bisection(f, y, a0, b0, bisection_iter=20):
+    """ Evaluate the inverse function of f at y by using the bisection method
+    
+    Parameters
+    ----------
+    f : function mapping float to float
+        Should be monotonically increasing in order for the inverse to be valid
+    y : float
+        Value for which to evaluate f_inv
+    a : float
+        left bound for bisection method
+    b : float
+        right bound for bisection method
+    bisection_iter : int, optional
+        Number of bisection methood iterations to perform in a function call, by default 20
+    """
+    a = a0
+    b = b0
+    for _ in range(bisection_iter):
+        c = (a+b)/2
+        if f(c)<=y:
+            a = c
+        else:
+            b = c
+    return (a+b)/2 
 
+def approx_equals(tol=10e-6, *args):
+    """Return true if all real-valued values in args are approximately equal
 
-
-
+    Parameters
+    ------------------
+    tol : float
+        Absolute error of the difference with greatest absolute error should be less than tol
+    args:
+        Values to compare
+    """
+    max_error = 0
+    for i in range(len(args)):
+        for i in range(i+1, len(args)):
+            error = abs(args[i]-args[j])
+            max_error = error if error > max_error else max_error
+    return max_error <= tol
 
 
 
