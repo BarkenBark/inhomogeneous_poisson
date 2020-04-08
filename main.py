@@ -210,7 +210,7 @@ def inhomogenous_poisson_ntt(inverse_cumulative_intensity_fun, t_start, t_end, n
     else:
         return event_times[0]
 
-def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_start, t_end, n_trials=1):
+def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_end, t_start=0, n_trials=1):
     """Simulate an inhomogenous poisson process using a method proposed by Cinlar
 
     Based on Cinlar method outlined by Freakonometrics in https://freakonometrics.hypotheses.org/724
@@ -230,6 +230,7 @@ def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_start, t_end, n_tria
     event_times : list of np.ndarray, len=n_trials
         List of event time arrays where the shape of each ndarray is the number of events on the time interval for each trial    
     """
+    if t_start != 0: raise NotImplementedError("Can't handle non-zero start times atm.")
     assert t_end > t_start
     assert n_trials >= 1
 
@@ -239,7 +240,11 @@ def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_start, t_end, n_tria
             NOTE: Only consideres values on the defined interval x_interval
         """
         y_interval = f(x_interval)
-        return min(x_interval[y_interval > y])
+        canidates = x_interval[y_interval > y]
+        if len(canidates)==0:
+            return None
+        else:
+            return min(x_interval[y_interval > y])
 
     infimum_interval_res = 1000
     event_times = []
@@ -249,11 +254,11 @@ def inhomogenous_poisson_cinlar(cumulative_intensity_fun, t_start, t_end, n_tria
         while True:
             u = np.random.rand()
             s = s - np.log(u)
-            t = get_infimum(cumulative_intensity_fun, s, np.linspace(0, t_end-t_start, num=infimum_interval_res)) # Can I make more efficient by starting at current t?
-            if t > t_end-t_start:
+            t = get_infimum(cumulative_intensity_fun, s, np.linspace(0, t_end, num=infimum_interval_res, endpoint=True)) # Can I make more efficient by starting at current t?
+            if t is None: # Meaning no t > t_end was found in infimum search
                 break
             event_times_trial.append(t)
-        event_times.append(np.array(event_times_trial)+t_start)
+        event_times.append(np.array(event_times_trial))
 
     if n_trials > 1:
         return event_times
