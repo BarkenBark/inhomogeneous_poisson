@@ -154,7 +154,7 @@ def inhomogenous_poisson_thinning(intensity_fun, t_start, t_end, lambda_bar=None
         event_times_trial = []
         while True:
             U1 = np.random.rand()
-            t = t - np.log(U1/lambda_bar)
+            t = t - np.log(U1)/lambda_bar
             if t > t_end:
                 break
             U2 = np.random.rand()
